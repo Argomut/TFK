@@ -1,18 +1,27 @@
-using UnityEngine;
-using System.Collections;
-using System.Collections.Generic;
+﻿using UnityEngine;
 
+[RequireComponent(typeof(CharacterController))]
 public class ThirdPersonMovement : MonoBehaviour
 {
+    [Header("Movement Settings")]
     public float speed = 3f;
-    public float rotationSpeed = 720f;
-    public Animator animator;
-    private CharacterController controller;
-    private Vector3 velocity;
+    public float rotationSmoothTime = 0.1f;
 
-    public float gravity = -8f;
+    [Header("Jump & Gravity")]
     public float jumpHeight = 1.5f;
-    public Transform cameraTransform;
+    public float gravity = -9.81f;
+
+    [Header("Ground Check")]
+    public float groundCheckDistance = 0.2f;
+    public LayerMask groundMask;
+
+    [Header("References")]
+    public Animator animator;
+
+    private CharacterController controller;
+    private Transform cameraTransform;
+    private Vector3 velocity;
+    private float rotationVelocity;
 
     void Start()
     {
@@ -20,45 +29,56 @@ public class ThirdPersonMovement : MonoBehaviour
         cameraTransform = Camera.main.transform;
     }
 
-    void Move()
+    void Update()
     {
+        HandleMovement();
+    }
+
+    void HandleMovement()
+    {
+        // 1. Input
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
+        Vector3 inputDir = new Vector3(horizontal, 0f, vertical).normalized;
 
-        Vector3 direction = new Vector3(horizontal, 0f, vertical);
-
-        animator.SetFloat("Speed", direction.magnitude);
-
-        if (direction.magnitude >= 0.1f)
+        // 2. Calculate movement direction
+        if (inputDir.magnitude >= 0.1f)
         {
-            float targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + cameraTransform.eulerAngles.y;
-            float angle = Mathf.SmoothDampAngle(cameraTransform.eulerAngles.y, targetAngle, ref rotationSpeed, 0.1f);
+            float targetAngle = Mathf.Atan2(inputDir.x, inputDir.z) * Mathf.Rad2Deg + cameraTransform.eulerAngles.y;
+            float angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref rotationVelocity, rotationSmoothTime);
             transform.rotation = Quaternion.Euler(0f, angle, 0f);
 
             Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
-            controller.Move(moveDir.normalized * speed * Time.deltaTime);
+            controller.Move(moveDir * speed * Time.deltaTime);
         }
 
-        if (controller.isGrounded && velocity.y < 0)
+        // 3. Ground check
+        bool isGrounded = IsGrounded();
+
+        if (isGrounded && velocity.y < 0)
         {
-            velocity.y = -2f; 
+            velocity.y = -2f; // small downward force to stick to ground
             animator.SetBool("IsJumping", false);
         }
 
-        if (Input.GetButtonDown("Jump"))
+        // 4. Jump
+        if (isGrounded && Input.GetButtonDown("Jump"))
         {
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
             animator.SetBool("IsJumping", true);
         }
 
+        // 5. Apply gravity
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
 
+        // 6. Animator speed
+        animator.SetFloat("Speed", inputDir.magnitude);
     }
 
-    void Update()
+    bool IsGrounded()
     {
-        Move();
+        // Raycast slightly below character to detect ground
+        return Physics.Raycast(transform.position, Vector3.down, controller.height / 2 + groundCheckDistance, groundMask);
     }
-
 }
